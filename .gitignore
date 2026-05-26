@@ -1,0 +1,17 @@
+# Xcode / Swift
+build/
+DerivedData/
+.swiftpm/
+*.xcuserstate
+**/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Local agent config / sandbox state
+.claude/
+
+# Kenney asset zips — the unpacked .caf files in LetterRaiders/Audio/sfx/
+# are the canonical, in-bundle versions; the zips are just source archives.
+kenney_*.zip
