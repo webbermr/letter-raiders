@@ -6,6 +6,7 @@ struct LetterRaidersApp: App {
         FontRegistration.register()
         WordDictionary.shared.preload()
         _ = GameAudio.shared
+        CoinStore.shared.start()
     }
 
     var body: some Scene {

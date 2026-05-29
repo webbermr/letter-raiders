@@ -64,7 +64,7 @@ struct DailyScreen: View {
     private func heroCard(now: Date) -> some View {
         ZStack(alignment: .topTrailing) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("SEED · \(todayString)")
+                Text("\(todayString)")
                     .font(AppFont.mono(10, weight: .bold))
                     .tracking(2.4)
                     .foregroundColor(Theme.yellow)

@@ -18,6 +18,8 @@ struct SettingsScreen: View {
     @State private var showingNicknameEditor = false
     /// Drives the credits sheet (moved here from the Help view).
     @State private var showingCredits = false
+    /// Drives the in-app privacy policy required by App Store review.
+    @State private var showingPrivacyPolicy = false
 
     var body: some View {
         PhoneShell {
@@ -63,12 +65,18 @@ struct SettingsScreen: View {
                             // omitting them.
                         }
                         Section(title: "About") {
-                            Row(icon: "shield.fill", label: "Privacy") { Chevron() }
+                            Button {
+                                Haptics.select()
+                                showingPrivacyPolicy = true
+                            } label: {
+                                Row(icon: "shield.fill", label: "Privacy", sub: "Privacy Policy") { Chevron() }
+                            }
+                            .buttonStyle(.plain)
                             Button {
                                 Haptics.select()
                                 showingCredits = true
                             } label: {
-                                Row(icon: "info.circle.fill", label: "Credits", sub: "Fonts, audio, dictionary, AI") { Chevron() }
+                                Row(icon: "info.circle.fill", label: "Credits", sub: "Fonts, audio, dictionary") { Chevron() }
                             }
                             .buttonStyle(.plain)
                             Button {
@@ -104,6 +112,9 @@ struct SettingsScreen: View {
         }
         .sheet(isPresented: $showingCredits) {
             CreditsSheet { showingCredits = false }
+        }
+        .sheet(isPresented: $showingPrivacyPolicy) {
+            PrivacyPolicySheet { showingPrivacyPolicy = false }
         }
     }
 }
@@ -334,6 +345,104 @@ private struct NicknameEditView: View {
     }
 }
 
+/// In-app privacy policy. App Store Connect still needs a public policy URL,
+/// but App Review also expects the policy to be easily accessible in-app.
+private struct PrivacyPolicySheet: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            GameBackground(variant: .cosmos)
+                .ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("PRIVACY POLICY")
+                        .font(AppFont.mono(11, weight: .bold))
+                        .tracking(3)
+                        .foregroundColor(Theme.cyanSoft)
+
+                    Text("Letter Raiders")
+                        .font(AppFont.display(28, weight: .bold))
+                        .kerning(-0.6)
+                        .foregroundColor(.white)
+
+                    Text("Last updated: May 29, 2026")
+                        .font(AppFont.mono(10.5, weight: .regular))
+                        .tracking(1.4)
+                        .foregroundColor(Color.white.opacity(0.45))
+
+                    policySection("Overview",
+                                  "Letter Raiders is designed as a local-first arcade word game. The app does not require an account, does not include advertising, does not use third-party analytics, and does not track you across apps or websites.")
+
+                    policySection("Data Stored On Your Device",
+                                  "The app stores gameplay and preference data on your device so the game can work between launches. This may include your nickname, high score, XP, rank progress, coins, lives, ship ownership and selection, power-up counts, achievements, daily challenge status, and settings for music, sound effects, haptics, and onboarding.")
+
+                    policySection("Data We Collect",
+                                  "Letter Raiders does not transmit gameplay data, nickname data, device identifiers, location, contacts, photos, camera data, microphone data, or similar personal data to a developer-operated server. Data processed only on your device is used for app functionality.")
+
+                    policySection("Apple Services",
+                                  "If you download, update, rate, review, purchase coins, or otherwise interact with Letter Raiders through the App Store, Apple may process information under Apple's own privacy policy. In-app purchases are handled by StoreKit and the App Store; Letter Raiders receives purchase status and product information needed to grant coins, but does not receive your payment card details, App Store review text, or Apple Account password.")
+
+                    policySection("Third Parties",
+                                  "Letter Raiders does not share user data with advertising networks, analytics providers, data brokers, or other third-party SDKs. If future versions add online services, ads, analytics, or Game Center features, this policy and the App Store privacy details will be updated before those features are released.")
+
+                    policySection("Children",
+                                  "Letter Raiders is not directed to children under 13 and does not knowingly collect personal information from children.")
+
+                    policySection("Retention And Deletion",
+                                  "Local game data remains on your device until you delete the app or erase the app's data through iOS. Because Letter Raiders does not maintain a developer-operated user account or server database, there is no remote account data for us to delete.")
+
+                    policySection("Your Choices",
+                                  "You can change your nickname and audio, sound effect, and haptic preferences from Settings. You can remove locally stored Letter Raiders data by deleting the app from your device.")
+
+                    policySection("Contact",
+                                  "For privacy questions, contact Mark Webber through the support contact listed for Letter Raiders on the App Store.")
+
+                    Spacer(minLength: 32)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 60)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Button {
+                Haptics.select()
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 38, height: 38)
+                    .background(
+                        Circle()
+                            .fill(Color.white.opacity(0.10))
+                            .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 12)
+            .padding(.trailing, 16)
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func policySection(_ title: String, _ body: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased())
+                .font(AppFont.mono(9.5, weight: .bold))
+                .tracking(2.0)
+                .foregroundColor(Theme.cyanSoft)
+            Text(body)
+                .font(AppFont.mono(11, weight: .regular))
+                .foregroundColor(Color.white.opacity(0.72))
+                .fixedSize(horizontal: false, vertical: true)
+                .lineSpacing(3)
+        }
+    }
+}
+
 /// Credits + copyright sheet. Surfaces the third-party attributions that
 /// used to live on the Help screen. Pulled into Settings so the Help view
 /// stays focused on gameplay rules.
@@ -368,10 +477,8 @@ private struct CreditsSheet: View {
                                "\"Asteroid Breach\" — AI-generated via Google Gemini.")
                     creditLine("Dictionary",
                                "ENABLE word list (public domain).")
-                    creditLine("AI Assistance",
-                               "Concept and asset generation supported by Google Gemini.")
 
-                    let year = Calendar.current.component(.year, from: Date())
+                    let year = String(Calendar.current.component(.year, from: Date()))
                     VStack(spacing: 4) {
                         Text("© \(year) Mark Webber")
                             .font(AppFont.mono(11, weight: .bold))

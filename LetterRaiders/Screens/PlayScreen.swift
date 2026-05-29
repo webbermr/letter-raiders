@@ -8,8 +8,8 @@ struct PlayResult {
     let bestComboThisRaid: Int
     let lettersCapturedThisRaid: Int
     let coinsEarnedThisRaid: Int
-    /// Charges still unspent at raid end — RunState carries them forward
-    /// (capped at `RunState.chargeCap`) so unused power-ups aren't wasted.
+    /// Charges still unspent at raid end. Hangar owns the persistent capped
+    /// stock, so unused power-ups aren't wasted.
     let zapChargesRemaining: Int
     let wildChargesRemaining: Int
 }
@@ -166,6 +166,12 @@ final class ShooterEngine: ObservableObject {
     /// `lastTimestamp` is also reset so a resume doesn't apply the elapsed
     /// pause duration as one giant dt.
     @Published var paused: Bool = false
+    /// When true, the player just lost their last life AND has enough coins
+    /// to buy at least one more. The view shows the CONTINUE overlay; the
+    /// engine stays paused until the player either purchases (applyContinue)
+    /// or declines (declineContinue). Suppressed entirely when
+    /// `allowContinue` is false (e.g., daily puzzles).
+    @Published var pendingContinue: Bool = false
 
     private var lastTimestamp: TimeInterval = 0
     private var spawnAccumulator: Double = 0
@@ -180,6 +186,10 @@ final class ShooterEngine: ObservableObject {
     /// Sentinel's one-time shield charge for this raid. Reset implicitly per
     /// raid because the engine is re-created on each new raid (.id(run.raid)).
     private var shieldUsedThisRaid: Bool = false
+    /// Whether the continue-prompt flow is allowed when the ship is destroyed.
+    /// Endless runs allow it; daily puzzles (`activeDailyPuzzle != nil`) pass
+    /// false so the puzzle's life budget can't be bought past.
+    private let allowContinue: Bool
     private(set) var onComplete: ((PlayResult) -> Void)?
 
     init(holdLimit: Int,
@@ -192,6 +202,7 @@ final class ShooterEngine: ObservableObject {
          modifiers: PuzzleModifiers = .none,
          initialZap: Int = 1,
          initialWild: Int = 1,
+         allowContinue: Bool = true,
          onComplete: @escaping (PlayResult) -> Void) {
         self.holdLimit = holdLimit
         self.raidSeconds = raidSeconds
@@ -199,6 +210,7 @@ final class ShooterEngine: ObservableObject {
         self.maxLives = maxLives
         self.loadout = loadout
         self.modifiers = modifiers
+        self.allowContinue = allowContinue
         self.letterBag = LetterData.bag(for: modifiers)
         self.shipX = 390 / 2
         self.targetX = 390 / 2
@@ -559,9 +571,46 @@ final class ShooterEngine: ObservableObject {
         // for the "you just died" gut-punch.
         Haptics.impact(.heavy)
         if lives <= 0 {
-            Haptics.notify(.error)
-            endRun(reason: "no_lives")
+            // Continue prompt: if allowed, pause and let the player decide.
+            // The prompt can route short balances to the coin store.
+            if allowContinue {
+                Haptics.notify(.warning)
+                paused = true
+                pendingContinue = true
+            } else {
+                Haptics.notify(.error)
+                endRun(reason: "no_lives")
+            }
         }
+    }
+
+    /// Player accepted the continue prompt and bought `count` lives. Deducts
+    /// coins, restores lives, dismisses the overlay, and unpauses. Capped
+    /// at `maxLives` so a daily-puzzle-style override is respected.
+    func applyContinue(count: Int) {
+        guard pendingContinue, count > 0 else { return }
+        let cost = Hangar.lifePrice * count
+        guard Hangar.coins >= cost else { return }
+        Hangar.coins -= cost
+        lives = max(1, min(maxLives, count))
+        pendingContinue = false
+        paused = false
+        // Reset invuln so the player gets a brief grace window on resume —
+        // otherwise the same bullet that killed them could double-hit on
+        // the next frame.
+        invuln = 1500
+        hitFlash = 0
+        GameAudio.shared.play("shield")
+        Haptics.notify(.success)
+    }
+
+    /// Player declined the continue prompt. End the run with the same
+    /// no-lives reason as a no-prompt path so RootView's handling is uniform.
+    func declineContinue() {
+        guard pendingContinue else { return }
+        pendingContinue = false
+        Haptics.notify(.error)
+        endRun(reason: "no_lives")
     }
 
     private func spawnImpactParticles(at p: CGPoint, color: Color, count: Int = 6) {
@@ -712,6 +761,7 @@ struct PlayScreen: View {
     /// First-time controls/power-ups overlay. Shown ONCE per install on
     /// the player's first Phase 1, then `seenPhase1Tutorial` is flipped.
     @State private var showingPhase1Tutorial: Bool = false
+    @State private var showingCoinStore: Bool = false
     @AppStorage("seenPhase1Tutorial") private var seenPhase1Tutorial: Bool = false
     /// Live coin balance. Reads the same UserDefaults key the engine writes
     /// to via Hangar.awardCoins, so the HUD chip ticks up in real time.
@@ -728,6 +778,7 @@ struct PlayScreen: View {
          modifiers: PuzzleModifiers = .none,
          initialZap: Int = 1,
          initialWild: Int = 1,
+         allowContinue: Bool = true,
          showHorizon: Bool = true,
          onPause: @escaping () -> Void = {},
          onComplete: @escaping (PlayResult) -> Void = { _ in }) {
@@ -758,6 +809,7 @@ struct PlayScreen: View {
             modifiers: modifiers,
             initialZap: initialZap,
             initialWild: initialWild,
+            allowContinue: allowContinue,
             onComplete: onComplete
         ))
     }
@@ -835,6 +887,16 @@ struct PlayScreen: View {
                         .transition(.opacity)
                 }
 
+                if engine.pendingContinue {
+                    LifePurchasePrompt(
+                        mode: .inRaid,
+                        onBuy: { count in engine.applyContinue(count: count) },
+                        onDecline: { engine.declineContinue() },
+                        onGetCoins: { showingCoinStore = true }
+                    )
+                    .transition(.opacity)
+                }
+
                 if showingPhase1Tutorial {
                     Phase1TutorialOverlay {
                         Haptics.impact(.light)
@@ -847,6 +909,10 @@ struct PlayScreen: View {
             }
             .animation(.easeInOut(duration: 0.18), value: showingPauseMenu)
             .animation(.easeInOut(duration: 0.2), value: showingPhase1Tutorial)
+            .animation(.easeInOut(duration: 0.2), value: engine.pendingContinue)
+            .sheet(isPresented: $showingCoinStore) {
+                CoinStoreSheet { showingCoinStore = false }
+            }
             .onAppear {
                 // First-ever Phase 1: pause the engine before any frames
                 // tick and show the controls/power-ups tutorial. Dismiss
@@ -1644,5 +1710,186 @@ struct PowerButton: View {
         }
         .buttonStyle(.plain)
         .disabled(charges <= 0)
+    }
+}
+
+// MARK: - LifePurchasePrompt
+//
+// Shared overlay used in two places:
+//   • PlayScreen, when the ship is destroyed mid-raid and the player can
+//     afford at least one life — pauses the engine and lets the player
+//     pick how many lives to buy (1, 2, or 3, capped by coin balance).
+//   • RootView, when the player taps Launch Mission with Hangar.lifeStock
+//     at 0 — gates the run on a purchase (or a NOT NOW decline).
+//
+// Caller wires `onBuy(count:)` and `onDecline()` to handle coin deduction,
+// life persistence, and follow-on flow (resume raid vs. start run). The
+// prompt itself never mutates state — it just gathers the player's intent.
+struct LifePurchasePrompt: View {
+    enum Mode { case inRaid, preLaunch }
+
+    let mode: Mode
+    let onBuy: (Int) -> Void
+    let onDecline: () -> Void
+    var onGetCoins: (() -> Void)? = nil
+
+    @AppStorage(Hangar.coinKey) private var coins: Int = Hangar.startingCoins
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.78)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { /* swallow */ }
+
+            VStack(spacing: 14) {
+                Text(mode == .inRaid ? "SHIP DESTROYED" : "OUT OF LIVES")
+                    .font(AppFont.mono(11, weight: .bold))
+                    .tracking(3.2)
+                    .foregroundColor(Theme.red)
+
+                Text(mode == .inRaid ? "CONTINUE?" : "REFUEL?")
+                    .font(AppFont.display(36, weight: .bold))
+                    .foregroundStyle(LinearGradient(
+                        colors: [Theme.red, Theme.amber],
+                        startPoint: .top, endPoint: .bottom
+                    ))
+                    .shadow(color: Theme.red.opacity(0.4), radius: 20)
+
+                Text(mode == .inRaid
+                     ? "Buy lives to keep this mission going."
+                     : "You need at least 1 life to launch a mission.")
+                    .font(AppFont.display(13, weight: .regular))
+                    .foregroundColor(Color.white.opacity(0.7))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 6) {
+                    Circle().fill(Theme.yellow).frame(width: 8, height: 8)
+                        .shadow(color: Theme.yellow, radius: 3)
+                    Text("\(coins) COINS")
+                        .font(AppFont.mono(10, weight: .bold))
+                        .tracking(1.6)
+                        .foregroundColor(Theme.yellow)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(Theme.yellow.opacity(0.12))
+                        .overlay(Capsule().stroke(Theme.yellow.opacity(0.3), lineWidth: 1))
+                )
+                .padding(.top, 4)
+
+                VStack(spacing: 8) {
+                    ForEach(1...Hangar.maxLives, id: \.self) { n in
+                        buyButton(count: n)
+                    }
+                }
+                .padding(.top, 6)
+
+                if coins < Hangar.lifePrice, let onGetCoins {
+                    Button {
+                        Haptics.select()
+                        onGetCoins()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(Theme.yellow)
+                                .frame(width: 9, height: 9)
+                                .shadow(color: Theme.yellow, radius: 4)
+                            Text("GET COINS")
+                                .font(AppFont.mono(12, weight: .bold))
+                                .tracking(2.4)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Theme.yellow.opacity(0.16))
+                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.yellow.opacity(0.4), lineWidth: 1.2))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Button {
+                    Haptics.notify(.warning)
+                    onDecline()
+                } label: {
+                    Text(mode == .inRaid ? "GIVE UP" : "NOT NOW")
+                        .font(AppFont.mono(12, weight: .semibold))
+                        .tracking(2.4)
+                        .foregroundColor(Color.white.opacity(0.7))
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color.white.opacity(0.05))
+                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        )
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
+            .padding(22)
+            .frame(maxWidth: 320)
+            .background(
+                RoundedRectangle(cornerRadius: 22)
+                    .fill(LinearGradient(
+                        colors: [Color(hex: 0x2A0B1E).opacity(0.95), Color(hex: 0x0C0729).opacity(0.95)],
+                        startPoint: .top, endPoint: .bottom
+                    ))
+                    .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.red.opacity(0.45), lineWidth: 1.5))
+                    .shadow(color: Theme.red.opacity(0.45), radius: 40)
+            )
+            .padding(.horizontal, 28)
+        }
+    }
+
+    private func buyButton(count: Int) -> some View {
+        let cost = Hangar.lifePrice * count
+        let canAfford = coins >= cost
+        let title = count == 1 ? "1 LIFE" : "\(count) LIVES"
+        return Button {
+            guard canAfford else {
+                Haptics.notify(.warning)
+                return
+            }
+            Haptics.notify(.success)
+            onBuy(count)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(canAfford ? Theme.red : Color.white.opacity(0.35))
+                Text(title)
+                    .font(AppFont.mono(13, weight: .bold))
+                    .tracking(2.4)
+                    .foregroundColor(.white)
+                Spacer(minLength: 6)
+                Text("\(cost)")
+                    .font(AppFont.mono(13, weight: .bold))
+                    .foregroundColor(canAfford ? Theme.yellow : Color.white.opacity(0.35))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(canAfford
+                          ? AnyShapeStyle(LinearGradient(
+                              colors: [Theme.red.opacity(0.32), Theme.amber.opacity(0.22)],
+                              startPoint: .topLeading, endPoint: .bottomTrailing))
+                          : AnyShapeStyle(Color.white.opacity(0.04)))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(
+                        canAfford ? Theme.red.opacity(0.5) : Color.white.opacity(0.08),
+                        lineWidth: 1.2
+                    ))
+            )
+            .opacity(canAfford ? 1 : 0.55)
+        }
+        .buttonStyle(.plain)
+        .disabled(!canAfford)
     }
 }

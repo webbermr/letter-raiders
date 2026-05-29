@@ -1,0 +1,114 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "F7E118B2",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "0.99",
+      "familyShareable" : false,
+      "internalID" : "81EE1B3F",
+      "localizations" : [
+        {
+          "description" : "1,500 coins for Letter Raiders.",
+          "displayName" : "Pocket Change",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.markwebber.letterraiders.coins.pocket",
+      "referenceName" : "Pocket Change",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "2.99",
+      "familyShareable" : false,
+      "internalID" : "D8F4668F",
+      "localizations" : [
+        {
+          "description" : "5,500 coins for Letter Raiders.",
+          "displayName" : "Cadet Pack",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.markwebber.letterraiders.coins.cadet",
+      "referenceName" : "Cadet Pack",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "C4BF79C0",
+      "localizations" : [
+        {
+          "description" : "12,000 coins for Letter Raiders.",
+          "displayName" : "Captain Pack",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.markwebber.letterraiders.coins.captain",
+      "referenceName" : "Captain Pack",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "7AB982C3",
+      "localizations" : [
+        {
+          "description" : "30,000 coins for Letter Raiders.",
+          "displayName" : "Commander Pack",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.markwebber.letterraiders.coins.commander",
+      "referenceName" : "Commander Pack",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "19.99",
+      "familyShareable" : false,
+      "internalID" : "27B65891",
+      "localizations" : [
+        {
+          "description" : "65,000 coins for Letter Raiders.",
+          "displayName" : "Admiral Vault",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.markwebber.letterraiders.coins.admiral",
+      "referenceName" : "Admiral Vault",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_disableDialogs" : false,
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_renewalBillingIssuesEnabled" : false,
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 5,
+    "minor" : 0
+  }
+}

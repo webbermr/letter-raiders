@@ -42,7 +42,11 @@ final class RunState: ObservableObject {
 
     func resetForNewRun() {
         raid = 1
-        lives = Self.startingLives
+        // Lives are persistent (Hangar.lifeStock, capped at maxLives).
+        // RootView gates Launch Mission on lifeStock >= 1, so we trust the
+        // current value here — no auto-refill. Daily puzzles still override
+        // via PuzzleModifiers.lives in the .play case.
+        lives = Hangar.lifeStock
         cumulativeScore = 0
         carriedLetters = []
         bestWord = ""
@@ -70,6 +74,21 @@ final class RunState: ObservableObject {
         bestCombo = max(bestCombo, bestComboThisRaid)
     }
 
+    /// Bump current run lives by `amount` (clamped to maxLives) and mirror
+    /// the change to the persistent Hangar.lifeStock so the next raid's
+    /// engine init sees it.
+    @discardableResult
+    func grantLife(_ amount: Int = 1) -> Bool {
+        guard amount > 0 else { return false }
+        let before = lives
+        lives = min(Hangar.maxLives, lives + amount)
+        if lives > before {
+            Hangar.lifeStock = lives
+            return true
+        }
+        return false
+    }
+
     /// Apply the result of a finished word phase and advance to the next raid.
     /// Caller guarantees `score.valid == true`; on invalid/skip the run ends
     /// instead and `pendingRaidScore` is forfeited (never folded in).
@@ -90,6 +109,11 @@ final class RunState: ObservableObject {
         // A 5-letter word = +50, a 7-letter = +60, an 8-letter = +65 (all
         // on top of the per-capture XP earned in Phase 1).
         let wordLength = max(0, score.used)
-        PlayerProfile.awardXP(25 + wordLength * 5)
+        // Rank-up from word XP grants +1 life (capped at maxLives). Fires
+        // between raids, after the engine is gone, so there's no race
+        // with the engine's local lives counter.
+        if PlayerProfile.awardXP(25 + wordLength * 5) != nil {
+            grantLife()
+        }
     }
 }

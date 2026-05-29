@@ -18,6 +18,7 @@ struct TitleScreen: View {
 
     @AppStorage("highScore") private var highScore: Int = 0
     @AppStorage(Hangar.coinKey) private var coins: Int = Hangar.startingCoins
+    @AppStorage(Hangar.lifeKey) private var lifeStock: Int = Hangar.maxLives
     /// Drives the daily-teaser "Available in" state when today is already played.
     @AppStorage(DailyState.lastAttemptDayKey) private var dailyLastAttemptDay: String = ""
     /// Live player XP so the avatar pill auto-updates after a run.
@@ -25,6 +26,7 @@ struct TitleScreen: View {
     /// Live player nickname (editable from Settings → Account).
     @AppStorage(PlayerProfile.nicknameKey) private var playerNickname: String = PlayerProfile.defaultNickname
     @State private var float: Bool = false
+    @State private var showingCoinStore = false
     /// The five hero tiles. Letters / values / tiers are reshuffled every
     /// time the title appears so the home screen looks fresh on each visit.
     /// Sizes and bob offsets stay fixed so the visual choreography is stable.
@@ -73,6 +75,9 @@ struct TitleScreen: View {
         .onAppear {
             withAnimation(.easeInOut(duration: 3).repeatForever(autoreverses: true)) { float = true }
             heroTiles = Self.makeHeroTiles()
+        }
+        .sheet(isPresented: $showingCoinStore) {
+            CoinStoreSheet { showingCoinStore = false }
         }
     }
 
@@ -161,6 +166,7 @@ struct TitleScreen: View {
                 Wordmark(size: 56)
                 highScoreChip
                 coinsChip
+                livesChip
             }
         }
         .frame(maxWidth: .infinity)
@@ -179,6 +185,9 @@ struct TitleScreen: View {
                 .font(AppFont.mono(11, weight: .bold))
                 .tracking(1.6)
                 .foregroundColor(Theme.yellow)
+            Image(systemName: "plus")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(Theme.yellow)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -187,6 +196,37 @@ struct TitleScreen: View {
                 .fill(Theme.yellow.opacity(0.08))
                 .overlay(Capsule().stroke(Theme.yellow.opacity(0.3), lineWidth: 1))
         )
+        .contentShape(Capsule())
+        .onTapGesture {
+            Haptics.select()
+            showingCoinStore = true
+        }
+    }
+
+    private var livesChip: some View {
+        let lowLives = lifeStock <= 0
+        return HStack(spacing: 8) {
+            Image(systemName: "heart.fill")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(Theme.red)
+                .shadow(color: Theme.red.opacity(0.6), radius: 4)
+            Text("LIVES")
+                .font(AppFont.mono(10, weight: .regular))
+                .tracking(2.4)
+                .foregroundColor(Color.white.opacity(0.55))
+            Text("\(lifeStock) / \(Hangar.maxLives)")
+                .font(AppFont.mono(11, weight: .bold))
+                .tracking(1.6)
+                .foregroundColor(lowLives ? Theme.red : Theme.pinkSoft)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(
+            Capsule()
+                .fill((lowLives ? Theme.red : Theme.pinkSoft).opacity(0.08))
+                .overlay(Capsule().stroke((lowLives ? Theme.red : Theme.pinkSoft).opacity(0.3), lineWidth: 1))
+        )
+        .contentShape(Capsule())
     }
 
     private var highScoreChip: some View {

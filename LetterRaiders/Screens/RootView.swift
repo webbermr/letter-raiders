@@ -28,6 +28,11 @@ struct RootView: View {
     /// through to PlayScreen + WordScreen, and the run is single-raid: a
     /// valid word ends the daily as success, anything else as failure.
     @State private var activeDailyPuzzle: DailyPuzzle? = nil
+    /// True when the player tapped Launch Mission with `Hangar.lifeStock`
+    /// at 0. Drives the LifePurchasePrompt overlay; resolved when the
+    /// player buys lives or declines.
+    @State private var showLifePrompt: Bool = false
+    @State private var showingCoinStore: Bool = false
 
     init() {
         // Start on onboarding for fresh installs; jump straight to title for
@@ -42,10 +47,7 @@ struct RootView: View {
             switch route {
             case .title:
                 TitleScreen(
-                    onPlay: {
-                        run.resetForNewRun()
-                        route = .play
-                    },
+                    onPlay: { tryLaunchMission() },
                     onContinue: { route = .play },
                     onDaily:    { route = .daily },
                     onShips:    { route = .skins },
@@ -116,6 +118,9 @@ struct RootView: View {
                     // can never lose what the player has earned.
                     initialZap: Hangar.zapStock,
                     initialWild: Hangar.wildStock,
+                    // Continue-on-death only for endless runs; daily puzzles
+                    // are one-attempt-per-day fixed challenges.
+                    allowContinue: activeDailyPuzzle == nil,
                     onPause: { endRun(reason: "Mission aborted") },
                     onComplete: handlePlayResult
                 )
@@ -158,10 +163,7 @@ struct RootView: View {
                     xpGainedThisRun: xpGainedThisRun,
                     ranksGainedThisRun: ranksGainedThisRun,
                     newlyUnlockedBadgeIDs: newlyUnlockedBadgeIDs,
-                    onReplay: {
-                        run.resetForNewRun()
-                        route = .play
-                    },
+                    onReplay: { tryLaunchMission() },
                     onHome: { route = .title }
                 )
                 .transition(.opacity)
@@ -190,6 +192,21 @@ struct RootView: View {
                     .transition(.opacity)
             }
 
+            // At-launch life gate. Sits above the route but below the
+            // scanline overlay so it reads in the same neon look as the
+            // game. Only reachable from the title screen — `tryLaunchMission`
+            // is what raises it.
+            if showLifePrompt {
+                LifePurchasePrompt(
+                    mode: .preLaunch,
+                    onBuy: { count in handleLifePurchase(count: count) },
+                    onDecline: { showLifePrompt = false },
+                    onGetCoins: { showingCoinStore = true }
+                )
+                .transition(.opacity)
+                .zIndex(50)
+            }
+
             // Global CRT scanline overlay — rendered last so it sits above
             // every route AND any in-screen overlays (pause menu, score card).
             // `.allowsHitTesting(false)` (inside ScanlineOverlay) keeps taps
@@ -200,6 +217,37 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: route)
+        .animation(.easeInOut(duration: 0.2), value: showLifePrompt)
+        .sheet(isPresented: $showingCoinStore) {
+            CoinStoreSheet { showingCoinStore = false }
+        }
+    }
+
+    /// Title-screen LAUNCH MISSION handler. Persistent lives means a player
+    /// who ended their last run at 0 has to refuel before launching — show
+    /// the purchase prompt instead of running with zero lives. Players who
+    /// can't afford any lives can still decline; their out is today's daily
+    /// puzzle (which uses puzzle-modifier lives, not Hangar.lifeStock).
+    private func tryLaunchMission() {
+        if Hangar.lifeStock <= 0 {
+            showLifePrompt = true
+            return
+        }
+        run.resetForNewRun()
+        route = .play
+    }
+
+    /// At-launch purchase confirmed. Deducts coins, sets the lifeStock to
+    /// the bought count (player was at 0), dismisses the prompt, and
+    /// launches the run.
+    private func handleLifePurchase(count: Int) {
+        let cost = Hangar.lifePrice * count
+        guard Hangar.coins >= cost, count > 0 else { return }
+        Hangar.coins -= cost
+        Hangar.lifeStock = min(Hangar.maxLives, count)
+        showLifePrompt = false
+        run.resetForNewRun()
+        route = .play
     }
 
     // MARK: - Run flow
@@ -213,6 +261,15 @@ struct RootView: View {
         // No charge-state writeback here — the engine wrote through to
         // Hangar.zapStock / Hangar.wildStock on every power-up use, so
         // the persistent pool already reflects the truth.
+        //
+        // Lives DO need writeback at raid end: the engine ran a local
+        // counter for the raid. Persist for endless runs (daily puzzles
+        // override lives via modifiers and must NOT contaminate the
+        // persistent stock — losing all lives on Glass Cannon shouldn't
+        // empty the player's hangar life pool).
+        if activeDailyPuzzle == nil {
+            Hangar.lifeStock = max(0, result.livesRemaining)
+        }
 
         // Phase-1 failure paths bypass the Word screen.
         if result.reason == "no_lives" {
@@ -271,12 +328,19 @@ struct RootView: View {
         //   • Base grant: +1 ZAP + 1 WILD on every cleared raid.
         //   • Bonus ZAP: every 3rd cleared raid (raids 3, 6, 9, …).
         //   • Bonus WILD: word of 7+ letters that cleared the raid.
-        // All written straight to the persistent Hangar pool — no cap,
-        // charges accumulate freely so players keep what they earn.
+        // All written straight to the persistent Hangar pool, capped by
+        // Hangar.maxChargeStock.
         let zapBonus = (justClearedRaid % 3 == 0) ? 1 : 0
         let wildBonus = (wordLength >= 7) ? 1 : 0
         Hangar.grantZap(1 + zapBonus)
         Hangar.grantWild(1 + wildBonus)
+
+        // Life rewards — hard-capped at 3 by RunState.grantLife.
+        //   • Every 5 cleared raids in a run (raids 5, 10, 15, …)
+        //   • Word of 9+ letters (rarer than the WILD bonus, bigger reward)
+        // Each call is a no-op when already at the cap.
+        if justClearedRaid % 5 == 0 { run.grantLife() }
+        if wordLength >= 9 { run.grantLife() }
 
         // If lives are gone (shouldn't happen here — handlePlayResult already
         // catches no_lives — but defensive), end the run.
@@ -329,6 +393,10 @@ struct RootView: View {
                 dailyReward = scaled
                 // Daily completion XP bonus — independent of rank multiplier.
                 PlayerProfile.awardXP(100)
+                // Daily clear refills 1 life directly into the persistent
+                // pool (DailyState's once-per-day gate guarantees this fires
+                // at most once per calendar day). No-op when already at cap.
+                Hangar.grantLife()
             }
             DailyState.recordAttempt(
                 score: dailySuccess ? run.cumulativeScore : 0,

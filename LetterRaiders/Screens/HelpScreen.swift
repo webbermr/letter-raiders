@@ -44,7 +44,7 @@ struct HelpScreen: View {
                             bullet("ZAP", "Instantly captures every letter on screen.")
                             bullet("WILD", "Arms your ship — the next captured letter becomes a wildcard ★.")
                             bullet("UFO ★", "A scrolling wildcard saucer — shoot it for a big score and a free wildcard tile (worth coins too).")
-                            bullet("Yours to keep", "Charges persist across runs forever. Earned or purchased power-ups never expire and never get capped — what you bank stays banked.")
+                            bullet("Yours to keep", "Charges persist across runs forever. Earned or purchased power-ups never expire, with ZAP and WILD capped at 20 each.")
                             bullet("Per-raid grant", "+1 ZAP and +1 WILD on every cleared raid.")
                             bullet("Bonus ZAP", "+1 ZAP every 3rd cleared raid (raids 3, 6, 9, …).")
                             bullet("Bonus WILD", "Clear a raid with a 7+ letter word → +1 WILD.")

@@ -63,9 +63,13 @@ struct SkinsScreen: View {
     @AppStorage(Hangar.coinKey) private var coins: Int = Hangar.startingCoins
     @AppStorage(Hangar.bonusZapKey) private var zapStock: Int = Hangar.startingCharges
     @AppStorage(Hangar.bonusWildKey) private var wildStock: Int = Hangar.startingCharges
+    @AppStorage(Hangar.lifeKey) private var lifeStock: Int = Hangar.maxLives
     @AppStorage(PlayerProfile.xpKey) private var playerXP: Int = 0
 
     private var playerRank: Int { RankSystem.rank(forXP: playerXP) }
+    private var zapDisplayStock: Int { min(max(0, zapStock), Hangar.maxChargeStock) }
+    private var wildDisplayStock: Int { min(max(0, wildStock), Hangar.maxChargeStock) }
+    @State private var showingCoinStore = false
 
     /// Local in-screen selection (which card is featured in the hero). Starts
     /// on the currently equipped ship so the screen opens to the player's
@@ -110,35 +114,47 @@ struct SkinsScreen: View {
         PhoneShell {
             VStack(spacing: 0) {
                 PageHeader(title: "Hangar", onBack: onBack) {
-                    HStack(spacing: 6) {
-                        Circle().fill(Theme.yellow).frame(width: 12, height: 12)
-                        Text("\(coins)")
-                            .font(AppFont.mono(12, weight: .bold))
-                            .foregroundColor(Theme.yellow)
+                    Button {
+                        Haptics.select()
+                        showingCoinStore = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Circle().fill(Theme.yellow).frame(width: 12, height: 12)
+                            Text("\(coins)")
+                                .font(AppFont.mono(12, weight: .bold))
+                                .foregroundColor(Theme.yellow)
+                            Image(systemName: "plus")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(Theme.yellow)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(Theme.yellow.opacity(0.12))
+                                .overlay(Capsule().stroke(Theme.yellow.opacity(0.3), lineWidth: 1))
+                        )
                     }
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(
-                        Capsule()
-                            .fill(Theme.yellow.opacity(0.12))
-                            .overlay(Capsule().stroke(Theme.yellow.opacity(0.3), lineWidth: 1))
-                    )
+                    .buttonStyle(.plain)
                 }
                 .padding(.top, 8)
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
-                        featured.padding(.horizontal, 20)
+                        powerupsSection.padding(.horizontal, 20).padding(.top, 8)
+
+                        featured.padding(.horizontal, 20).padding(.top, 18)
 
                         ctaButton.padding(.horizontal, 20).padding(.top, 14)
 
                         gridSection.padding(.horizontal, 20).padding(.top, 18)
 
-                        powerupsSection.padding(.horizontal, 20).padding(.top, 18)
-
                         Spacer().frame(height: 40)
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showingCoinStore) {
+            CoinStoreSheet { showingCoinStore = false }
         }
     }
 
@@ -287,17 +303,18 @@ struct SkinsScreen: View {
 
     /// "POWER-UPS" buy section — purchase ZAP or WILD charges with coins.
     /// Charges live in a single persistent pool (`Hangar.zapStock` /
-    /// `Hangar.wildStock`) — no cap, no draining on use. Anything earned
-    /// or bought belongs to the player permanently.
+    /// `Hangar.wildStock`) capped at `Hangar.maxChargeStock`.
     private var powerupsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            EyebrowText(text: "Power-Ups · \(Hangar.chargePrice) coins each")
+            EyebrowText(text: "Power-Ups")
             HStack(spacing: 10) {
                 buyTile(
                     label: "ZAP",
                     icon: "bolt.fill",
                     color: Theme.yellow,
-                    owned: zapStock
+                    owned: zapDisplayStock,
+                    price: Hangar.chargePrice,
+                    atCap: zapDisplayStock >= Hangar.maxChargeStock
                 ) {
                     if Hangar.buyZap() { Haptics.notify(.success) }
                     else { Haptics.notify(.warning) }
@@ -306,28 +323,46 @@ struct SkinsScreen: View {
                     label: "WILD",
                     icon: "star.fill",
                     color: Theme.pinkSoft,
-                    owned: wildStock
+                    owned: wildDisplayStock,
+                    price: Hangar.chargePrice,
+                    atCap: wildDisplayStock >= Hangar.maxChargeStock
                 ) {
                     if Hangar.buyWild() { Haptics.notify(.success) }
                     else { Haptics.notify(.warning) }
                 }
             }
-            Text("Charges persist across runs. Earn more by clearing raids (+1 of each per clear), every 3rd raid (+1 ZAP), and 7+ letter words (+1 WILD).")
+            // LIFE on its own row, full-width. It's higher-stakes than the
+            // ZAP/WILD charge purchases (5× the price, hard-capped at 3) so
+            // it reads naturally as a separate, centered CTA.
+            buyTile(
+                label: "LIFE",
+                icon: "heart.fill",
+                color: Theme.red,
+                owned: lifeStock,
+                price: Hangar.lifePrice,
+                atCap: lifeStock >= Hangar.maxLives
+            ) {
+                if Hangar.buyLife() { Haptics.notify(.success) }
+                else { Haptics.notify(.warning) }
+            }
+            Text("Charges and lives persist across runs. ZAP / WILD earn from clearing raids, every 3rd raid (+1 ZAP), and 7+ letter words (+1 WILD) — capped at \(Hangar.maxChargeStock) each. Lives refill on rank-up, every 5 raids, 9+ letter words, and clearing the daily — capped at \(Hangar.maxLives).")
                 .font(AppFont.mono(10, weight: .regular))
                 .foregroundColor(Color.white.opacity(0.55))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    /// One tile in the Power-Ups buy grid. Greys out only when the player
-    /// can't afford it — no stock cap to gate against any more.
+    /// One tile in the Power-Ups buy grid. Disabled when the player can't
+    /// afford the price OR (lives only) when the stock is at the cap.
     private func buyTile(label: String,
                          icon: String,
                          color: Color,
                          owned: Int,
+                         price: Int,
+                         atCap: Bool,
                          action: @escaping () -> Void) -> some View {
-        let canAfford = coins >= Hangar.chargePrice
-        let disabled = !canAfford
+        let canAfford = coins >= price
+        let disabled = !canAfford || atCap
         return Button(action: action) {
             HStack(spacing: 12) {
                 ZStack {
@@ -343,10 +378,27 @@ struct SkinsScreen: View {
                     Text(label)
                         .font(AppFont.display(14, weight: .semibold))
                         .foregroundColor(.white)
-                    Text("OWNED \(owned)")
-                        .font(AppFont.mono(10, weight: .regular))
-                        .tracking(1.6)
-                        .foregroundColor(Color.white.opacity(0.55))
+                    if atCap {
+                        Text("MAX \(owned)")
+                            .font(AppFont.mono(10, weight: .regular))
+                            .tracking(1.6)
+                            .foregroundColor(Color.white.opacity(0.55))
+                    } else {
+                        Text("OWNED \(owned)")
+                            .font(AppFont.mono(10, weight: .regular))
+                            .tracking(1.6)
+                            .foregroundColor(Color.white.opacity(0.55))
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(Theme.yellow)
+                                .frame(width: 7, height: 7)
+                                .shadow(color: Theme.yellow.opacity(0.7), radius: 3)
+                            Text("\(price)")
+                                .font(AppFont.mono(10, weight: .regular))
+                                .tracking(1.6)
+                                .foregroundColor(Color.white.opacity(0.55))
+                        }
+                    }
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "plus")

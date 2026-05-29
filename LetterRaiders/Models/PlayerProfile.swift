@@ -161,6 +161,12 @@ enum PlayerProfile {
         // levels in a single award (we only award for the final new rank
         // to keep payouts predictable).
         Hangar.awardCoins(100 * newRank)
+        // Note: rank-up life grants are NOT awarded here. Mid-raid rank-ups
+        // (from per-letter +1 XP) would race with the engine's lives counter
+        // — it overwrites Hangar.lifeStock at raid end and the grant would
+        // be lost. Life grants live at safe callsites (between raids in
+        // RunState.advanceAfterWord and the daily-clear path in
+        // RootView.endRun).
         return newRank
     }
 }
