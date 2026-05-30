@@ -1,16 +1,17 @@
 import SwiftUI
 
-/// First-launch onboarding. 5 steps:
+/// First-launch onboarding. 6 steps:
 ///   1. Welcome + nickname capture (commits to PlayerProfile.nickname)
-///   2. Mission — the two-phase loop (shoot then spell)
+///   2. Mission — the raid loop, hazards, lives, and rack
 ///   3. Controls — drag to move, tap to fire
 ///   4. Word phase — scoring rules + power-ups (ZAP / WILD)
-///   5. Progression — daily challenges, hangar ships, ranks & badges
+///   5. Hangar economy — coins, lives, StoreKit packs, coin codes
+///   6. Progression — daily challenges, ships, ranks & badges
 ///
 /// Routed via RootView.onboarding(step:); the threshold for the final
 /// DEPLOY action is set there based on the highest step here.
 struct OnboardingScreen: View {
-    static let totalSteps = 5
+    static let totalSteps = 6
 
     var step: Int = 1
     var onNext: () -> Void = {}
@@ -27,8 +28,11 @@ struct OnboardingScreen: View {
         PhoneShell {
             VStack(spacing: 0) {
                 topBar
-                stepContent
-                Spacer()
+                ScrollView(showsIndicators: false) {
+                    stepContent
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 18)
+                }
                 bottomBar
             }
         }
@@ -62,7 +66,8 @@ struct OnboardingScreen: View {
         case 2: stepMission
         case 3: stepControls
         case 4: stepWord
-        case 5: stepProgression
+        case 5: stepHangarEconomy
+        case 6: stepProgression
         default: stepMission
         }
     }
@@ -121,7 +126,7 @@ struct OnboardingScreen: View {
     // MARK: - Step 2 · Mission
 
     private var stepMission: some View {
-        VStack(spacing: 36) {
+        VStack(spacing: 28) {
             ZStack {
                 Circle()
                     .fill(RadialGradient(
@@ -134,17 +139,29 @@ struct OnboardingScreen: View {
             }
             VStack(spacing: 10) {
                 EyebrowText(text: "Step · 02 · Mission")
-                Text("Shoot letters.\nSpell to score.")
+                Text("Raid first.\nSpell after.")
                     .font(AppFont.display(30, weight: .bold))
                     .kerning(-0.9)
                     .multilineTextAlignment(.center)
                     .foregroundColor(.white)
-                Text("Phase 1: capture falling tiles — rare letters fall faster. Phase 2: spend them on the biggest word you can spell.")
+                Text("Every run alternates between a Space-Invaders raid and a timed word phase. Capture letters, protect your lives, then turn the rack into a valid word.")
                     .font(AppFont.display(15, weight: .regular))
                     .multilineTextAlignment(.center)
                     .foregroundColor(Color.white.opacity(0.65))
                     .padding(.horizontal, 32)
             }
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                pillarCard(icon: "square.grid.3x3.fill", label: "Letters",
+                           sub: "Fill your rack before time or lives run out.", color: Theme.cyanSoft)
+                pillarCard(icon: "heart.fill", label: "Lives",
+                           sub: "Bomb hits cost lives. Endless runs use your hangar stock.", color: Theme.red)
+                pillarCard(icon: "shield.fill", label: "Bunkers",
+                           sub: "Green walls absorb fire and erode over time.", color: Theme.green)
+                pillarCard(icon: "sparkles", label: "UFO ★",
+                           sub: "Shoot the saucer for points, coins, and a wildcard.", color: Theme.yellow)
+            }
+            .padding(.horizontal, 24)
         }
     }
 
@@ -221,9 +238,9 @@ struct OnboardingScreen: View {
                 .frame(maxWidth: .infinity, alignment: .center)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("base 14 · length ×1.25")
-                    Text("rare letter +50 · speed ×1.3")
-                    Text("= 73 pts").foregroundColor(Theme.yellow)
+                    Text("base letters · length multiplier")
+                    Text("rare +50 · speed bonus · efficiency")
+                    Text("valid word banks the raid").foregroundColor(Theme.yellow)
                 }
                 .font(AppFont.mono(11, weight: .regular))
                 .foregroundColor(Color.white.opacity(0.7))
@@ -237,43 +254,96 @@ struct OnboardingScreen: View {
             .padding(.horizontal, 24)
 
             VStack(alignment: .leading, spacing: 10) {
-                EyebrowText(text: "Power-ups")
+                EyebrowText(text: "Word tools")
                 tool(name: "ZAP",  desc: "Capture every letter on screen.", color: Theme.yellow,    icon: "bolt.fill")
                 tool(name: "WILD", desc: "Next capture becomes a wildcard.", color: Theme.pinkSoft, icon: "star.fill")
+                tool(name: "+30s", desc: "Extend word time twice, paid from score.", color: Theme.cyanSoft, icon: "timer")
             }
             .padding(.horizontal, 24)
         }
     }
 
-    // MARK: - Step 5 · Progression
+    // MARK: - Step 5 · Hangar economy
 
-    private var stepProgression: some View {
+    private var stepHangarEconomy: some View {
         VStack(spacing: 24) {
             VStack(spacing: 10) {
-                EyebrowText(text: "Step · 05 · Progression")
-                Text("Earn, equip,\nadvance.")
+                EyebrowText(text: "Step · 05 · Hangar")
+                Text("Spend coins.\nTune your loadout.")
                     .font(AppFont.display(30, weight: .bold))
                     .kerning(-0.9)
                     .multilineTextAlignment(.center)
                     .foregroundColor(.white)
-                Text("Letter Raiders rewards you for everything — long words, daily streaks, raid clears.")
+                Text("Coins, lives, ships, and power-up stock all persist between runs.")
                     .font(AppFont.mono(12, weight: .regular))
                     .multilineTextAlignment(.center)
                     .foregroundColor(Color.white.opacity(0.65))
                     .padding(.horizontal, 32)
             }
 
-            // 2×2 grid of pillar cards. Each calls out one major system
-            // the player will see from the home screen.
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                pillarCard(icon: "circle.fill", label: "Coins",
+                           sub: "Earn from captures, UFOs, raid clears, final score, and dailies.", color: Theme.yellow)
+                pillarCard(icon: "cart.fill", label: "Coin Bay",
+                           sub: "Buy coin packs or redeem a coin code from the store.", color: Theme.cyanSoft)
+                pillarCard(icon: "bolt.fill", label: "Power-Ups",
+                           sub: "Buy ZAP/WILD for 100 coins or earn them by clearing raids.", color: Theme.pinkSoft)
+                pillarCard(icon: "heart.fill", label: "Lives",
+                           sub: "Buy lives for 500 coins, refill through milestones, capped at 3.", color: Theme.red)
+            }
+            .padding(.horizontal, 24)
+
+            VStack(alignment: .leading, spacing: 10) {
+                EyebrowText(text: "Ships")
+                tool(name: "Starter ships", desc: "Viper, Magenta Drift, and Argon are ready on day one.", color: Theme.cyanSoft, icon: "airplane")
+                tool(name: "Unlocks", desc: "Buy premium hulls with coins or earn rank-gated ships over time.", color: Theme.violet, icon: "lock.open.fill")
+            }
+            .padding(.horizontal, 24)
+        }
+    }
+
+    // MARK: - Step 6 · Progression
+
+    private var stepProgression: some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 10) {
+                EyebrowText(text: "Step · 06 · Progression")
+                Text("Return daily.\nClimb ranks.")
+                    .font(AppFont.display(30, weight: .bold))
+                    .kerning(-0.9)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.white)
+                Text("Letter Raiders rewards long words, daily streaks, raid clears, personal bests, and collection goals.")
+                    .font(AppFont.mono(12, weight: .regular))
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(Color.white.opacity(0.65))
+                    .padding(.horizontal, 32)
+            }
+
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 pillarCard(icon: "calendar",      label: "Daily Challenges",
-                           sub: "One unique puzzle per day. Build a streak.", color: Theme.yellow)
+                           sub: "One attempt per day with unique modifiers and coin rewards.", color: Theme.yellow)
                 pillarCard(icon: "airplane",      label: "Hangar Ships",
-                           sub: "16 ships, each with its own combat perk.", color: Theme.cyanSoft)
+                           sub: "16 ships with perks like rapid fire, shields, magnets, and time boosts.", color: Theme.cyanSoft)
                 pillarCard(icon: "rosette",       label: "Badges",
-                           sub: "49 achievements to collect.", color: Theme.pinkSoft)
+                           sub: "\(AchievementCatalog.all.count) achievements track words, streaks, ranks, and feats.", color: Theme.pinkSoft)
                 pillarCard(icon: "chart.bar.fill", label: "Ranks & XP",
-                           sub: "20 ranks unlock prestige ships.", color: Theme.violet)
+                           sub: "20 ranks unlock prestige ships and increase daily coin rewards.", color: Theme.violet)
+            }
+            .padding(.horizontal, 24)
+
+            VStack(alignment: .leading, spacing: 10) {
+                EyebrowText(text: "XP sources")
+                statStrip(items: [
+                    ("Letters", "+1"),
+                    ("UFO", "+10"),
+                    ("Raid", "+25"),
+                    ("Daily", "+100"),
+                ])
+                Text("Valid words add length × 5 XP. A new personal best adds +200 XP and rank-ups grant coin bonuses.")
+                    .font(AppFont.mono(10, weight: .regular))
+                    .foregroundColor(Color.white.opacity(0.58))
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 24)
         }
@@ -324,6 +394,31 @@ struct OnboardingScreen: View {
                 .fill(Color.white.opacity(0.04))
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 1))
         )
+    }
+
+    private func statStrip(items: [(String, String)]) -> some View {
+        HStack(spacing: 8) {
+            ForEach(items, id: \.0) { item in
+                VStack(spacing: 3) {
+                    Text(item.1)
+                        .font(AppFont.display(14, weight: .bold))
+                        .foregroundColor(Theme.yellow)
+                    Text(item.0.uppercased())
+                        .font(AppFont.mono(8, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundColor(Color.white.opacity(0.55))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.white.opacity(0.04))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.yellow.opacity(0.22), lineWidth: 1))
+                )
+            }
+        }
     }
 
     /// Single pillar in the progression-grid (step 5). Square-ish card,

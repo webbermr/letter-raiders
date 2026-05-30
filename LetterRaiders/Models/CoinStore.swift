@@ -44,6 +44,7 @@ final class CoinStore: ObservableObject {
                 await self?.handle(transactionResult: result)
             }
         }
+        Task { await finishPendingTransactions() }
         Task { await loadProducts() }
     }
 
@@ -106,6 +107,12 @@ final class CoinStore: ObservableObject {
             await transaction.finish()
         } catch {
             message = "A purchase couldn't be verified."
+        }
+    }
+
+    private func finishPendingTransactions() async {
+        for await result in Transaction.unfinished {
+            await handle(transactionResult: result)
         }
     }
 

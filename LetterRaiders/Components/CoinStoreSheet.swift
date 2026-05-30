@@ -6,6 +6,8 @@ struct CoinStoreSheet: View {
 
     @ObservedObject private var store = CoinStore.shared
     @AppStorage(Hangar.coinKey) private var coins: Int = Hangar.startingCoins
+    @State private var showingRedeemPrompt = false
+    @State private var redeemInput = ""
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -32,6 +34,8 @@ struct CoinStoreSheet: View {
                         .foregroundColor(Color.white.opacity(0.62))
                         .fixedSize(horizontal: false, vertical: true)
                         .lineSpacing(3)
+
+                    redeemCodeButton
 
                     VStack(spacing: 10) {
                         ForEach(CoinPack.allCases) { pack in
@@ -76,6 +80,15 @@ struct CoinStoreSheet: View {
         .task {
             await store.loadProducts()
         }
+        .alert("Redeem Code", isPresented: $showingRedeemPrompt) {
+            TextField("Enter code", text: $redeemInput)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+            Button("Redeem") { submitRedeemCode() }
+            Button("Cancel", role: .cancel) { redeemInput = "" }
+        } message: {
+            Text("Enter a Letter Raiders coin code to add coins to your balance.")
+        }
     }
 
     private var coinBalance: some View {
@@ -96,6 +109,63 @@ struct CoinStoreSheet: View {
                 .fill(Theme.yellow.opacity(0.11))
                 .overlay(Capsule().stroke(Theme.yellow.opacity(0.3), lineWidth: 1))
         )
+    }
+
+    private func submitRedeemCode() {
+        switch RedeemCode.redeem(redeemInput) {
+        case .success(let coins):
+            store.message = "Code accepted — \(coins.formatted()) coins added."
+            Haptics.notify(.success)
+        case .alreadyRedeemed:
+            store.message = "That code has already been redeemed."
+            Haptics.notify(.warning)
+        case .invalid:
+            store.message = "That code isn't valid. Check it and try again."
+            Haptics.notify(.error)
+        }
+        redeemInput = ""
+    }
+
+    private var redeemCodeButton: some View {
+        Button {
+            Haptics.select()
+            showingRedeemPrompt = true
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Theme.cyan.opacity(0.14))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "ticket.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(Theme.cyanSoft)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Redeem Code")
+                        .font(AppFont.display(14, weight: .semibold))
+                        .foregroundColor(.white)
+                    Text("ENTER A LETTER RAIDERS COIN CODE")
+                        .font(AppFont.mono(10.5, weight: .regular))
+                        .tracking(1.5)
+                        .foregroundColor(Color.white.opacity(0.58))
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(Theme.cyanSoft.opacity(0.85))
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color.white.opacity(0.045))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.cyan.opacity(0.34), lineWidth: 1))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private func packRow(_ pack: CoinPack) -> some View {
